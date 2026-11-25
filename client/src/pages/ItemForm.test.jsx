@@ -1,6 +1,6 @@
 // Frontend tests for the ItemForm page — THIS is the only frontend file you edit.
 // Run with:  npm test --workspace client
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import ItemForm from './ItemForm.jsx'
@@ -44,6 +44,50 @@ describe('ItemForm — report mode (/items/new)', () => {
     expect(category).toHaveValue('other')
   })
 
-  test.todo('submitting POSTs { title, status, category, location, description } (no reportedBy) and navigates to /items')
-  test.todo('shows the server\'s message when the request fails (e.g. 409) and stays on the page')
+  test('submitting POSTs the item fields and navigates to /items', async () => {
+    api.post.mockResolvedValue({ data: { item: {} } })
+    const user = userEvent.setup()
+    renderAt('/items/new')
+
+    await user.type(screen.getByPlaceholderText(/title/i), 'Black backpack')
+    const [status, category] = screen.getAllByRole('combobox')
+    await user.selectOptions(status, 'found')
+    await user.selectOptions(category, 'accessories')
+    await user.type(screen.getByPlaceholderText(/location/i), 'Library 2nd floor')
+    await user.type(screen.getByPlaceholderText(/description/i), 'Black with silver zipper')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/items', {
+        title: 'Black backpack',
+        status: 'found',
+        category: 'accessories',
+        location: 'Library 2nd floor',
+        description: 'Black with silver zipper'
+      })
+    })
+    const [, body] = api.post.mock.calls[0]
+    expect(body).not.toHaveProperty('reportedBy')
+    expect(await screen.findByText('Items page')).toBeInTheDocument()
+  })
+
+  test("shows the server's message when the request fails and stays on the page", async () => {
+    api.post.mockRejectedValue({
+      response: {
+        data: {
+          message: 'Duplicate item at this location'
+        }
+      }
+    })
+    const user = userEvent.setup()
+    renderAt('/items/new')
+
+    await user.type(screen.getByPlaceholderText(/title/i), 'Keys')
+    await user.type(screen.getByPlaceholderText(/location/i), 'Library')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    expect(await screen.findByText('Duplicate item at this location')).toBeInTheDocument()
+    expect(screen.queryByText('Items page')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /report item/i })).toBeInTheDocument()
+  })
 })
